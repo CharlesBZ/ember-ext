@@ -45,6 +45,7 @@ function activate(context) {
         const panel = vscode.window.createWebviewPanel('emberChat', 'Ember Seek Chat', vscode.ViewColumn.One, {
             enableScripts: true,
             retainContextWhenHidden: true
+            retainContextWhenHidden: true, // Keeps webview state when hidden
         });
         panel.webview.html = getWebviewContent(messages);
         panel.webview.onDidReceiveMessage(async (message) => {
@@ -70,6 +71,7 @@ function activate(context) {
                             role: msg.role,
                             content: msg.content
                         })),
+
                         stream: true,
                     });
                     let responseText = '';
@@ -81,6 +83,7 @@ function activate(context) {
                             text: responseText
                         });
                         panel.webview.postMessage({ command: 'scrollToBottom' });
+
                     }
                     // Add assistant response to history
                     messages.push({ role: 'assistant', content: responseText });
@@ -251,4 +254,3 @@ function getWebviewContent(messages) {
     </html>`;
 }
 function deactivate() { }
-//# sourceMappingURL=extension.js.map
