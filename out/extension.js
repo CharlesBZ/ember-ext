@@ -410,4 +410,3 @@ function getWebviewContent(messages) {
     </html>`;
 }
 function deactivate() { }
-//# sourceMappingURL=extension.js.map
