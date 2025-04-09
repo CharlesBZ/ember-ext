@@ -23,7 +23,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
         );
 
-        // Initialize webview with current history
         panel.webview.html = getWebviewContent(messages);
 
         panel.webview.onDidReceiveMessage(
@@ -38,10 +37,8 @@ export function activate(context: vscode.ExtensionContext) {
                         return;
                     }
 
-                    // Add user message to history
                     messages.push({ role: 'user', content: userPrompt });
                     await context.globalState.update('chatHistory', messages);
-                    // Send updated messages to webview instead of regenerating HTML
                     panel.webview.postMessage({
                         command: 'addMessage',
                         message: { role: 'user', content: userPrompt }
@@ -68,7 +65,6 @@ export function activate(context: vscode.ExtensionContext) {
                         }
                         panel.webview.postMessage({ command: 'stopTyping' });
 
-                        // Add assistant response to history
                         messages.push({ role: 'assistant', content: responseText });
                         await context.globalState.update('chatHistory', messages);
                         panel.webview.postMessage({
@@ -106,11 +102,11 @@ export function activate(context: vscode.ExtensionContext) {
 function getWebviewContent(messages: ChatMessage[]): string {
     const escapeHtml = (unsafe: string) => {
         return unsafe
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>')
+            .replace(/"/g, '"')
+            .replace(/'/g, '');
     };
 
     const historyHtml = messages
@@ -118,7 +114,6 @@ function getWebviewContent(messages: ChatMessage[]): string {
             msg => `
                 <div class="message ${msg.role}" data-role="${msg.role}">
                     <div class="bubble">
-                        <strong>${msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
                         <p>${escapeHtml(msg.content)}</p>
                     </div>
                 </div>
@@ -132,48 +127,79 @@ function getWebviewContent(messages: ChatMessage[]): string {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
-        <title>Ember Seek Chat</title>
+        <title>Ember Chat</title>
         <style>
             body {
                 margin: 0;
                 padding: 0;
-                background: #1a1a1a;
-                color: #e0e0e0;
-                font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Roboto', sans-serif;
+                background: #0A0A0A;
+                color: #F5F5F5;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
                 display: flex;
                 flex-direction: column;
                 height: 100vh;
                 overflow: hidden;
             }
+            #header {
+                background: #0A0A0A;
+                padding: 10px 20px;
+                border-bottom: 1px solid #252525;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }
+            #header h1 {
+                margin: 0;
+                font-size: 20px;
+                font-weight: 600;
+                color: #F5F5F5;
+            }
+            #header button {
+                background: #252525;
+                color: #F5F5F5;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 12px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.2s;
+            }
+            #header button:hover {
+                background: #333;
+            }
             #container {
                 flex: 1;
                 display: flex;
                 flex-direction: column;
-                max-width: 800px;
+                max-width: 900px;
                 margin: 0 auto;
                 width: 100%;
-                padding: 20px;
+                padding: 0 20px;
                 box-sizing: border-box;
+                overflow: hidden;
             }
             #history {
                 flex: 1;
                 overflow-y: auto;
-                padding-bottom: 20px;
+                padding: 20px 0;
                 scrollbar-width: thin;
-                scrollbar-color: #444 #2a2a2a;
+                scrollbar-color: #444 #0A0A0A;
             }
             #history::-webkit-scrollbar {
-                width: 8px;
+                width: 6px;
             }
             #history::-webkit-scrollbar-track {
-                background: #2a2a2a;
+                background: #0A0A0A;
             }
             #history::-webkit-scrollbar-thumb {
                 background: #444;
-                border-radius: 4px;
+                border-radius: 3px;
             }
             .message {
-                margin: 10px 0;
+                margin: 12px 0;
                 display: flex;
                 animation: fadeIn 0.3s ease-in;
             }
@@ -184,24 +210,22 @@ function getWebviewContent(messages: ChatMessage[]): string {
                 justify-content: flex-start;
             }
             .bubble {
-                max-width: 70%;
-                padding: 10px 15px;
-                border-radius: 15px;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-                line-height: 1.4;
+                max-width: 75%;
+                padding: 12px 16px;
+                border-radius: 20px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+                line-height: 1.5;
+                font-size: 16px;
             }
             .user .bubble {
-                background: #0078d4;
-                color: #fff;
+                background: #007AFF;
+                color: #FFFFFF;
+                border-top-right-radius: 8px;
             }
             .assistant .bubble {
-                background: #333;
-                color: #e0e0e0;
-            }
-            .bubble strong {
-                font-weight: 600;
-                display: block;
-                margin-bottom: 5px;
+                background: #252525;
+                color: #F5F5F5;
+                border-top-left-radius: 8px;
             }
             .bubble p {
                 margin: 0;
@@ -209,20 +233,20 @@ function getWebviewContent(messages: ChatMessage[]): string {
             }
             #typing-indicator {
                 display: none;
-                margin: 10px 15px;
-                color: #888;
+                margin: 12px 16px;
             }
             #typing-indicator.active {
-                display: block;
+                display: flex;
+                align-items: center;
             }
             #typing-indicator span {
                 display: inline-block;
-                width: 8px;
-                height: 8px;
+                width: 6px;
+                height: 6px;
                 background: #888;
                 border-radius: 50%;
                 margin: 0 2px;
-                animation: typing 1s infinite;
+                animation: typing 1.2s infinite;
             }
             #typing-indicator span:nth-child(2) {
                 animation-delay: 0.2s;
@@ -231,77 +255,83 @@ function getWebviewContent(messages: ChatMessage[]): string {
                 animation-delay: 0.4s;
             }
             @keyframes typing {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-5px); }
+                0%, 100% { transform: translateY(0); opacity: 0.6; }
+                50% { transform: translateY(-4px); opacity: 1; }
             }
             @keyframes fadeIn {
-                from { opacity: 0; transform: translateY(10px); }
+                from { opacity: 0; transform: translateY(8px); }
                 to { opacity: 1; transform: translateY(0); }
             }
             #input-area {
                 position: sticky;
                 bottom: 0;
-                background: #1a1a1a;
-                padding: 15px 20px;
-                border-top: 1px solid #2a2a2a;
-                max-width: 800px;
+                background: #0A0A0A;
+                padding: 16px 20px;
+                max-width: 900px;
                 margin: 0 auto;
                 width: 100%;
                 box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                gap: 12px;
             }
             #prompt {
-                width: 100%;
-                padding: 10px 15px;
-                background: #2a2a2a;
-                color: #e0e0e0;
+                flex: 1;
+                padding: 12px 16px;
+                background: #252525;
+                color: #F5F5F5;
                 border: none;
-                border-radius: 20px;
+                border-radius: 24px;
                 resize: none;
                 font-size: 16px;
                 line-height: 1.5;
-                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
                 transition: box-shadow 0.2s;
             }
             #prompt:focus {
                 outline: none;
-                box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+                box-shadow: 0 1px 6px rgba(0, 122, 255, 0.3);
             }
-            #buttons {
-                margin-top: 10px;
-                text-align: right;
-            }
-            #askBtn, #clearBtn {
-                padding: 8px 15px;
-                margin-left: 10px;
-                background: #0078d4;
-                color: #fff;
+            #askBtn {
+                width: 40px;
+                height: 40px;
+                background: #007AFF;
+                color: #FFFFFF;
                 border: none;
-                border-radius: 15px;
+                border-radius: 50%;
                 cursor: pointer;
-                font-size: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                line-height: 0;
                 transition: background 0.2s;
             }
-            #askBtn:hover, #clearBtn:hover {
-                background: #005ea2;
+            #askBtn:hover {
+                background: #005BB5;
             }
             #askBtn:disabled {
                 background: #444;
                 cursor: not-allowed;
             }
+            #askBtn::after {
+                content: '→';
+            }
         </style>
     </head>
     <body>
+        <div id="header">
+            <h1>Ember Chat</h1>
+            <button id="clearBtn">Clear Conversation</button>
+        </div>
         <div id="container">
             <div id="history">${historyHtml}</div>
             <div id="typing-indicator">
                 <span></span><span></span><span></span>
             </div>
             <div id="input-area">
-                <textarea id="prompt" rows="2" placeholder="Ask anything..."></textarea>
-                <div id="buttons">
-                    <button id="askBtn">Ask</button>
-                    <button id="clearBtn">Clear History</button>
-                </div>
+                <textarea id="prompt" rows="1" placeholder="Ask me anything..."></textarea>
+                <button id="askBtn"></button>
             </div>
         </div>
 
@@ -313,13 +343,11 @@ function getWebviewContent(messages: ChatMessage[]): string {
             const historyEl = document.getElementById('history');
             const typingIndicator = document.getElementById('typing-indicator');
 
-            // Initialize scroll position
             historyEl.scrollTop = historyEl.scrollHeight;
 
-            // Track if user is near bottom to auto-scroll
             let isNearBottom = true;
             historyEl.addEventListener('scroll', () => {
-                const threshold = 50; // Pixels from bottom
+                const threshold = 50;
                 isNearBottom = historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < threshold;
             });
 
@@ -334,11 +362,18 @@ function getWebviewContent(messages: ChatMessage[]): string {
                 vscode.postMessage({ command: 'clearHistory' });
             });
 
+            // Auto-resize textarea
+            promptEl.addEventListener('input', () => {
+                promptEl.style.height = 'auto';
+                promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + 'px';
+            });
+
             function sendMessage() {
                 const text = promptEl.value.trim();
                 if (text) {
                     askBtn.disabled = true;
                     promptEl.value = '';
+                    promptEl.style.height = 'auto';
                     vscode.postMessage({ command: 'chat', text });
                 }
             }
@@ -353,9 +388,7 @@ function getWebviewContent(messages: ChatMessage[]): string {
                 const div = document.createElement('div');
                 div.className = 'message ' + message.role;
                 div.dataset.role = message.role;
-                div.innerHTML = '<div class="bubble"><strong>' + 
-                    (message.role === 'user' ? 'You' : 'Assistant') + 
-                    ':</strong><p>' + message.content + '</p></div>';
+                div.innerHTML = '<div class="bubble"><p>' + escapeHtml(message.content) + '</p></div>';
                 historyEl.appendChild(div);
                 scrollToBottom();
             }
@@ -373,7 +406,7 @@ function getWebviewContent(messages: ChatMessage[]): string {
                         const div = document.createElement('div');
                         div.className = 'message assistant';
                         div.dataset.role = 'assistant';
-                        div.innerHTML = '<div class="bubble"><strong>Assistant:</strong><p></p></div>';
+                        div.innerHTML = '<div class="bubble"><p></p></div>';
                         historyEl.appendChild(div);
                         lastMessage = div.querySelector('p');
                     }
@@ -408,11 +441,11 @@ function getWebviewContent(messages: ChatMessage[]): string {
 
             function escapeHtml(unsafe) {
                 return unsafe
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
+                    .replace(/&/g, '&')
+                    .replace(/</g, '<')
+                    .replace(/>/g, '>')
+                    .replace(/"/g, '"')
+                    .replace(/'/g, '');
             }
         </script>
     </body>

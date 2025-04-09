@@ -49,20 +49,20 @@ function activate(context) {
         panel.webview.html = getWebviewContent(messages);
         panel.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'chat') {
-                const userPrompt = message.text.trim();
+                const userPrompt = message.text?.trim();
                 if (!userPrompt) {
                     panel.webview.postMessage({
-                        command: 'chatResponse',
+                        command: 'error',
                         text: 'Please enter a question or prompt.'
                     });
                     return;
                 }
-                // Add user message to history
                 messages.push({ role: 'user', content: userPrompt });
                 await context.globalState.update('chatHistory', messages);
-                // Update webview and notify to scroll to bottom
-                panel.webview.html = getWebviewContent(messages);
-                panel.webview.postMessage({ command: 'scrollToBottom' });
+                panel.webview.postMessage({
+                    command: 'addMessage',
+                    message: { role: 'user', content: userPrompt }
+                });
                 try {
                     const streamResponse = await ollama.chat({
                         model: 'deepseek-r1:latest',
@@ -73,39 +73,38 @@ function activate(context) {
                         stream: true,
                     });
                     let responseText = '';
+                    panel.webview.postMessage({ command: 'startTyping' });
                     for await (const part of streamResponse) {
                         responseText += part.message.content;
-                        // Send partial response and request scroll
                         panel.webview.postMessage({
-                            command: 'chatResponse',
+                            command: 'updateAssistantMessage',
                             text: responseText
                         });
-                        panel.webview.postMessage({ command: 'scrollToBottom' });
                     }
-                    // Add assistant response to history
+                    panel.webview.postMessage({ command: 'stopTyping' });
                     messages.push({ role: 'assistant', content: responseText });
                     await context.globalState.update('chatHistory', messages);
-                    panel.webview.html = getWebviewContent(messages);
-                    panel.webview.postMessage({ command: 'scrollToBottom' });
+                    panel.webview.postMessage({
+                        command: 'finalizeAssistantMessage',
+                        message: { role: 'assistant', content: responseText }
+                    });
                 }
                 catch (err) {
                     console.error('Chat error:', err);
                     const errorMessage = `Error: ${err instanceof Error ? err.message : String(err)}`;
                     messages.push({ role: 'assistant', content: errorMessage });
                     await context.globalState.update('chatHistory', messages);
-                    panel.webview.html = getWebviewContent(messages);
                     panel.webview.postMessage({
-                        command: 'chatResponse',
-                        text: errorMessage
+                        command: 'addMessage',
+                        message: { role: 'assistant', content: errorMessage }
                     });
-                    panel.webview.postMessage({ command: 'scrollToBottom' });
+                    panel.webview.postMessage({ command: 'stopTyping' });
                 }
             }
             else if (message.command === 'clearHistory') {
                 messages = [];
                 await context.globalState.update('chatHistory', messages);
-                panel.webview.html = getWebviewContent(messages);
-                panel.webview.postMessage({ command: 'scrollToBottom' });
+                panel.webview.postMessage({ command: 'clearMessages' });
             }
         }, undefined, context.subscriptions);
         vscode.window.showInformationMessage('Ember Chat activated!');
@@ -123,9 +122,10 @@ function getWebviewContent(messages) {
     };
     const historyHtml = messages
         .map(msg => `
-                <div class="message ${msg.role}">
-                    <strong>${msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
-                    <p>${escapeHtml(msg.content)}</p>
+                <div class="message ${msg.role}" data-role="${msg.role}">
+                    <div class="bubble">
+                        <p>${escapeHtml(msg.content)}</p>
+                    </div>
                 </div>
             `)
         .join('');
@@ -135,64 +135,213 @@ function getWebviewContent(messages) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
-        <title>Ember Seek Chat</title>
+        <title>Ember Chat</title>
         <style>
-            body { 
-                font-family: var(--vscode-font-family, sans-serif); 
-                margin: 1rem; 
-                background: var(--vscode-editor-background); 
-                color: var(--vscode-foreground);
+            body {
+                margin: 0;
+                padding: 0;
+                background: #0A0A0A;
+                color: #F5F5F5;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                overflow: hidden;
             }
-            #prompt { 
-                width: 100%; 
-                box-sizing: border-box; 
-                resize: vertical;
-                padding: 8px;
-                background: var(--vscode-input-background);
-                color: var(--vscode-input-foreground);
-                border: 1px solid var(--vscode-input-border);
+            #header {
+                background: #0A0A0A;
+                padding: 10px 20px;
+                border-bottom: 1px solid #252525;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                position: sticky;
+                top: 0;
+                z-index: 10;
             }
-            #askBtn, #clearBtn {
-                margin: 0.5rem 0.5rem 0.5rem 0;
-                padding: 5px 15px;
-                background: var(--vscode-button-background);
-                color: var(--vscode-button-foreground);
+            #header h1 {
+                margin: 0;
+                font-size: 20px;
+                font-weight: 600;
+                color: #F5F5F5;
+            }
+            #header button {
+                background: #252525;
+                color: #F5F5F5;
                 border: none;
+                padding: 6px 12px;
+                border-radius: 12px;
                 cursor: pointer;
+                font-size: 14px;
+                transition: background 0.2s;
             }
-            #askBtn:hover, #clearBtn:hover {
-                background: var(--vscode-button-hoverBackground);
+            #header button:hover {
+                background: #333;
+            }
+            #container {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                max-width: 900px;
+                margin: 0 auto;
+                width: 100%;
+                padding: 0 20px;
+                box-sizing: border-box;
+                overflow: hidden;
             }
             #history {
-                border: 1px solid var(--vscode-panel-border);
-                margin-top: 1rem;
-                padding: 0.5rem;
-                min-height: 100px;
-                max-height: 400px;
+                flex: 1;
                 overflow-y: auto;
-                white-space: pre-wrap;
-                background: var(--vscode-editor-background);
+                padding: 20px 0;
+                scrollbar-width: thin;
+                scrollbar-color: #444 #0A0A0A;
+            }
+            #history::-webkit-scrollbar {
+                width: 6px;
+            }
+            #history::-webkit-scrollbar-track {
+                background: #0A0A0A;
+            }
+            #history::-webkit-scrollbar-thumb {
+                background: #444;
+                border-radius: 3px;
             }
             .message {
-                margin: 0.5rem 0;
+                margin: 12px 0;
+                display: flex;
+                animation: fadeIn 0.3s ease-in;
             }
             .user {
-                text-align: right;
+                justify-content: flex-end;
             }
             .assistant {
-                text-align: left;
+                justify-content: flex-start;
             }
-            .message p {
-                margin: 0.2rem 0;
+            .bubble {
+                max-width: 75%;
+                padding: 12px 16px;
+                border-radius: 20px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+                line-height: 1.5;
+                font-size: 16px;
+            }
+            .user .bubble {
+                background: #007AFF;
+                color: #FFFFFF;
+                border-top-right-radius: 8px;
+            }
+            .assistant .bubble {
+                background: #252525;
+                color: #F5F5F5;
+                border-top-left-radius: 8px;
+            }
+            .bubble p {
+                margin: 0;
+                word-wrap: break-word;
+            }
+            #typing-indicator {
+                display: none;
+                margin: 12px 16px;
+            }
+            #typing-indicator.active {
+                display: flex;
+                align-items: center;
+            }
+            #typing-indicator span {
+                display: inline-block;
+                width: 6px;
+                height: 6px;
+                background: #888;
+                border-radius: 50%;
+                margin: 0 2px;
+                animation: typing 1.2s infinite;
+            }
+            #typing-indicator span:nth-child(2) {
+                animation-delay: 0.2s;
+            }
+            #typing-indicator span:nth-child(3) {
+                animation-delay: 0.4s;
+            }
+            @keyframes typing {
+                0%, 100% { transform: translateY(0); opacity: 0.6; }
+                50% { transform: translateY(-4px); opacity: 1; }
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(8px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            #input-area {
+                position: sticky;
+                bottom: 0;
+                background: #0A0A0A;
+                padding: 16px 20px;
+                max-width: 900px;
+                margin: 0 auto;
+                width: 100%;
+                box-sizing: border-box;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            #prompt {
+                flex: 1;
+                padding: 12px 16px;
+                background: #252525;
+                color: #F5F5F5;
+                border: none;
+                border-radius: 24px;
+                resize: none;
+                font-size: 16px;
+                line-height: 1.5;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+                transition: box-shadow 0.2s;
+            }
+            #prompt:focus {
+                outline: none;
+                box-shadow: 0 1px 6px rgba(0, 122, 255, 0.3);
+            }
+            #askBtn {
+                width: 40px;
+                height: 40px;
+                background: #007AFF;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 50%;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                line-height: 0;
+                transition: background 0.2s;
+            }
+            #askBtn:hover {
+                background: #005BB5;
+            }
+            #askBtn:disabled {
+                background: #444;
+                cursor: not-allowed;
+            }
+            #askBtn::after {
+                content: '→';
             }
         </style>
     </head>
     <body>
-        <h2>Ember VS Code Extension</h2>
-        <textarea id="prompt" rows="3" placeholder="Ask something..."></textarea><br />
-        <button id="askBtn">Ask</button>
-        <button id="clearBtn">Clear History</button>
-        <div id="history">${historyHtml}</div>
+        <div id="header">
+            <h1>Ember Chat</h1>
+            <button id="clearBtn">Clear Conversation</button>
+        </div>
+        <div id="container">
+            <div id="history">${historyHtml}</div>
+            <div id="typing-indicator">
+                <span></span><span></span><span></span>
+            </div>
+            <div id="input-area">
+                <textarea id="prompt" rows="1" placeholder="Ask me anything..."></textarea>
+                <button id="askBtn"></button>
+            </div>
+        </div>
 
         <script>
             const vscode = acquireVsCodeApi();
@@ -200,9 +349,15 @@ function getWebviewContent(messages) {
             const clearBtn = document.getElementById('clearBtn');
             const promptEl = document.getElementById('prompt');
             const historyEl = document.getElementById('history');
+            const typingIndicator = document.getElementById('typing-indicator');
 
-            // Initialize scroll position to bottom on load
             historyEl.scrollTop = historyEl.scrollHeight;
+
+            let isNearBottom = true;
+            historyEl.addEventListener('scroll', () => {
+                const threshold = 50;
+                isNearBottom = historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < threshold;
+            });
 
             askBtn.addEventListener('click', sendMessage);
             promptEl.addEventListener('keypress', (e) => {
@@ -215,37 +370,91 @@ function getWebviewContent(messages) {
                 vscode.postMessage({ command: 'clearHistory' });
             });
 
+            // Auto-resize textarea
+            promptEl.addEventListener('input', () => {
+                promptEl.style.height = 'auto';
+                promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + 'px';
+            });
+
             function sendMessage() {
                 const text = promptEl.value.trim();
                 if (text) {
                     askBtn.disabled = true;
                     promptEl.value = '';
+                    promptEl.style.height = 'auto';
                     vscode.postMessage({ command: 'chat', text });
-                    // Scroll to bottom immediately
+                }
+            }
+
+            function scrollToBottom() {
+                if (isNearBottom) {
                     historyEl.scrollTop = historyEl.scrollHeight;
                 }
             }
 
+            function addMessage(message) {
+                const div = document.createElement('div');
+                div.className = 'message ' + message.role;
+                div.dataset.role = message.role;
+                div.innerHTML = '<div class="bubble"><p>' + escapeHtml(message.content) + '</p></div>';
+                historyEl.appendChild(div);
+                scrollToBottom();
+            }
+
             window.addEventListener('message', event => {
-                const { command, text } = event.data;
-                if (command === 'chatResponse') {
-                    // Update the last assistant message dynamically
+                const { command, message, text } = event.data;
+                if (command === 'addMessage') {
+                    addMessage({
+                        role: message.role,
+                        content: escapeHtml(message.content)
+                    });
+                } else if (command === 'updateAssistantMessage') {
+                    let lastMessage = historyEl.querySelector('.message.assistant:last-child p');
+                    if (!lastMessage) {
+                        const div = document.createElement('div');
+                        div.className = 'message assistant';
+                        div.dataset.role = 'assistant';
+                        div.innerHTML = '<div class="bubble"><p></p></div>';
+                        historyEl.appendChild(div);
+                        lastMessage = div.querySelector('p');
+                    }
+                    lastMessage.textContent = text;
+                    scrollToBottom();
+                } else if (command === 'finalizeAssistantMessage') {
                     const lastMessage = historyEl.querySelector('.message.assistant:last-child p');
                     if (lastMessage) {
-                        lastMessage.textContent = text;
-                    } else {
-                        // If no assistant message exists, create one (for errors or initial response)
-                        const newMessage = document.createElement('div');
-                        newMessage.className = 'message assistant';
-                        newMessage.innerHTML = '<strong>Assistant:</strong><p>' + text + '</p>';
-                        historyEl.appendChild(newMessage);
+                        lastMessage.textContent = escapeHtml(message.content);
                     }
+                    scrollToBottom();
+                } else if (command === 'clearMessages') {
+                    while (historyEl.firstChild) {
+                        historyEl.removeChild(historyEl.firstChild);
+                    }
+                    typingIndicator.classList.remove('active');
+                    scrollToBottom();
+                } else if (command === 'startTyping') {
+                    typingIndicator.classList.add('active');
+                    scrollToBottom();
+                } else if (command === 'stopTyping') {
+                    typingIndicator.classList.remove('active');
+                    scrollToBottom();
+                } else if (command === 'error') {
+                    addMessage({
+                        role: 'assistant',
+                        content: escapeHtml(text)
+                    });
                     askBtn.disabled = false;
-                    historyEl.scrollTop = historyEl.scrollHeight;
-                } else if (command === 'scrollToBottom') {
-                    historyEl.scrollTop = historyEl.scrollHeight;
                 }
             });
+
+            function escapeHtml(unsafe) {
+                return unsafe
+                    .replace(/&/g, '&')
+                    .replace(/</g, '<')
+                    .replace(/>/g, '>')
+                    .replace(/"/g, '"')
+                    .replace(/'/g, '');
+            }
         </script>
     </body>
     </html>`;
