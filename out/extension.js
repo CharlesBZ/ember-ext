@@ -47,46 +47,55 @@ function activate(context) {
     console.log('"ember-ext" is now active!');
     // Initialize Ollama
     const ollama = new ollama_1.Ollama({
-        host: 'http://localhost:11434' // Default Ollama host, adjust if needed
+        host: "http://localhost:11434", // Default Ollama host, adjust if needed
     });
     // Test connection
-    ollama.list().then((models) => {
-        console.log('Available models:', models);
-    }).catch((err) => {
-        console.error('Ollama connection error:', err);
+    ollama
+        .list()
+        .then((models) => {
+        console.log("Available models:", models);
+    })
+        .catch((err) => {
+        console.error("Ollama connection error:", err);
     });
     // The command has been defined in the package.json file
     // Now provide the implementation of the command with registerCommand
     // The commandId parameter must match the command field in package.json
-    const disposable = vscode.commands.registerCommand('ember-ext.helloWorld', () => {
+    const disposable = vscode.commands.registerCommand("ember-ext.helloWorld", () => {
         // The code you place here will be executed every time your command is executed
         // Display a message box to the user
-        const panel = vscode.window.createWebviewPanel('emberChat', 'Ember Seek Chat', vscode.ViewColumn.One, {
+        const panel = vscode.window.createWebviewPanel("emberChat", "Ember Seek Chat", vscode.ViewColumn.One, {
             enableScripts: true,
-            retainContextWhenHidden: true // Keeps webview state when hidden
+            retainContextWhenHidden: true, // Keeps webview state when hidden
         });
         panel.webview.html = getWebviewContent();
         panel.webview.onDidReceiveMessage(async (message) => {
-            if (message.command === 'chat') {
+            if (message.command === "chat") {
                 const userPrompt = message.text;
-                let responseText = '';
+                let responseText = "";
                 try {
                     const streamResponse = await ollama.chat({
-                        model: 'deepseek-r1:latest',
-                        messages: [{ role: 'user', content: userPrompt }],
+                        model: "deepseek-r1:latest",
+                        messages: [{ role: "user", content: userPrompt }],
                         stream: true,
                     });
                     for await (const part of streamResponse) {
                         responseText += part.message.content;
-                        panel.webview.postMessage({ command: 'chatResponse', text: responseText });
+                        panel.webview.postMessage({
+                            command: "chatResponse",
+                            text: responseText,
+                        });
                     }
                 }
                 catch (err) {
-                    panel.webview.postMessage({ command: 'chatResponse', text: `Error: ${String(err)}` });
+                    panel.webview.postMessage({
+                        command: "chatResponse",
+                        text: `Error: ${String(err)}`,
+                    });
                 }
             }
         });
-        vscode.window.showErrorMessage('Hello World from ember-ext!');
+        vscode.window.showErrorMessage("Hello World from ember-ext!");
     });
     context.subscriptions.push(disposable);
 }
